@@ -167,6 +167,20 @@ function moveGhost( game, g ) {
   wrapTunnel( g, width );
 }
 
+// Salida de la pocilga: centra en x=13, sube por la puerta (13,12) hasta
+// (13,11) y marca released. El pen no bloquea fantasmas (solo pared 1).
+function exitPen( g ) {
+  if ( g.x !== 13 ) {
+    const step = Math.sign( 13 - g.x ) * g.speed;
+    g.x = Math.abs( step ) >= Math.abs( 13 - g.x ) ? 13 : g.x + step;
+  } else if ( g.y > 11 ) {
+    g.y = Math.max( 11, g.y - g.speed );
+  } else {
+    g.released = true;
+    g.dir = 'left';
+  }
+}
+
 function resetPositions( game ) {
   const p = game.pacman;
   p.x = PACMAN_START.x;
@@ -197,7 +211,10 @@ function update( game ) {
   }
 
   movePacman( game );
-  game.ghosts.forEach( ( g ) => moveGhost( game, g ) );
+  game.ghosts.forEach( ( g ) => {
+    if ( g.released ) moveGhost( game, g );
+    else if ( game.frame >= g.releaseAt ) exitPen( g );
+  } );
 
   for ( const g of game.ghosts ) {
     if ( collides( game.pacman, g ) ) {
