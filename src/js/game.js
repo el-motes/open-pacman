@@ -148,7 +148,7 @@ function decideGhost( game, g ) {
     tx = px + pd.x * 4;
     ty = py + pd.y * 4;
   } else if ( g.kind === 'inky' ) {
-    const b = game.ghosts.find( ( gh ) => ph.kind === 'blinky' );
+    const b = game.ghosts.find( ( gh ) => gh.kind === 'blinky' );
     tx = 2 * ( px + pd.x * 2 ) - Math.round( b.x );
     ty = 2 * ( py + pd.y * 2 ) - Math.round( b.y );
   } else {
