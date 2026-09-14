@@ -1,6 +1,6 @@
 // game.js
 // Estado y reglas. Depende de globals de maze.js: MAZE, TUNNEL_ROW,
-// PACMAN_START, GHOST_STARTS.
+// PACMAN_START, GHOST_STARTS, SCATTER_CORNERS.
 
 const DIRS = {
   left: { x: -1, y: 0 },
@@ -12,6 +12,10 @@ const OPPOSITE = { left: 'right', right: 'left', up: 'down', down: 'up' };
 
 const PACMAN_SPEED = 0.125; // 1/8 celda/frame -> alinea cada 8 frames
 const GHOST_SPEED = 0.1;    // 1/10 celda/frame
+
+const SCATTER_FRAMES = 420; // 7s a 60fps
+const CHASE_FRAMES = 1200;  // 20s a 60fps
+const EXIT_DELAY = { pinky: 120, inky: 360, clyde: 540 }; // ~2s/6s/9s
 
 // Crea una partida nueva. Copia MAZE (pristino) a game.grid para poder comer
 // dots sin destruir el original, y reiniciar.
@@ -28,6 +32,9 @@ function createGame() {
     score: 0,
     lives: 3,
     dotsRemaining: dots,
+    frame: 0,
+    mode: 'scatter',
+    modeTimer: SCATTER_FRAMES,
     grid,
     pacman: {
       x: PACMAN_START.x,
@@ -42,6 +49,8 @@ function createGame() {
       dir: 'up',
       speed: GHOST_SPEED,
       kind: g.kind,
+      releaseAt: g.kind === 'blinky' ? 0 : EXIT_DELAY[ g.kind ],
+      released: g.kind === 'blinky',
     } ) ),
   };
 }
@@ -120,25 +129,51 @@ function decideGhost( game, g ) {
   // Sin salida (callejon): permitir el giro de 180.
   const choices = options.length ? options : [ '' + OPPOSITE[ g.dir ] ];
 
-  if ( g.kind === 'hunter' ) {
-    const px = Math.round( p.x );
-    const py = Math.round( p.y );
-    let best = choices[ 0 ];
-    let bestDist = Infinity;
-    for ( const dir of choices ) {
-      const d = DIRS[ dir ];
-      const nx = g.x + d.x;
-      const ny = g.y + d.y;
-      const dist = Math.abs( nx - px ) + Math.abs( ny - py );
-      if ( dist < bestDist ) {
-        bestDist = dist;
-        best = dir;
-      }
-    }
-    g.dir = best;
+  // Target segun modo y personalidad. Puede caer en muro o fuera del
+  // tablero: solo se usa para distancia Manhattan, no necesita ser transitable.
+  const px = Math.round( p.x );
+  const py = Math.round( p.y );
+  const pd = DIRS[ p.dir ];
+  const corner = SCATTER_CORNERS[ g.kind ];
+  let tx;
+  let ty;
+
+  if ( game.mode === 'scatter' ) {
+    tx = corner.x;
+    ty = corner.y;
+  } else if ( g.kind === 'blinky' ) {
+    tx = px;
+    ty = py;
+  } else if ( g.kind === 'pinky' ) {
+    tx = px + pd.x * 4;
+    ty = py + pd.y * 4;
+  } else if ( g.kind === 'inky' ) {
+    const b = game.ghosts.find( ( gh ) => gh.kind === 'blinky' );
+    tx = 2 * ( px + pd.x * 2 ) - Math.round( b.x );
+    ty = 2 * ( py + pd.y * 2 ) - Math.round( b.y );
   } else {
-    g.dir = choices[ Math.floor( Math.random() * choices.length ) ];
+    // clyde: persigue lejos, vuelve a su esquina cerca.
+    if ( Math.abs( g.x - px ) + Math.abs( g.y - py ) > 8 ) {
+      tx = px;
+      ty = py;
+    } else {
+      tx = corner.x;
+      ty = corner.y;
+    }
   }
+
+  // Direccion valida (sin reversa) que minimiza distancia Manhattan al target.
+  let best = choices[ 0 ];
+  let bestDist = Infinity;
+  for ( const dir of choices ) {
+    const d = DIRS[ dir ];
+    const dist = Math.abs( g.x + d.x - tx ) + Math.abs( g.y + d.y - ty );
+    if ( dist < bestDist ) {
+      bestDist = dist;
+      best = dir;
+    }
+  }
+  g.dir = best;
 }
 
 function moveGhost( game, g ) {
@@ -158,6 +193,20 @@ function moveGhost( game, g ) {
   wrapTunnel( g, width );
 }
 
+// Salida de la pocilga: centra en x=13, sube por la puerta (13,12) hasta
+// (13,11) y marca released. El pen no bloquea fantasmas (solo pared 1).
+function exitPen( g ) {
+  if ( g.x !== 13 ) {
+    const step = Math.sign( 13 - g.x ) * g.speed;
+    g.x = Math.abs( step ) >= Math.abs( 13 - g.x ) ? 13 : g.x + step;
+  } else if ( g.y > 11 ) {
+    g.y = Math.max( 11, g.y - g.speed );
+  } else {
+    g.released = true;
+    g.dir = 'left';
+  }
+}
+
 function resetPositions( game ) {
   const p = game.pacman;
   p.x = PACMAN_START.x;
@@ -168,6 +217,9 @@ function resetPositions( game ) {
     g.x = GHOST_STARTS[ i ].x;
     g.y = GHOST_STARTS[ i ].y;
     g.dir = 'up';
+    // Re-escalonar liberaciones relativas al frame actual (tras perder vida).
+    g.released = g.kind === 'blinky';
+    g.releaseAt = game.frame + ( g.kind === 'blinky' ? 0 : EXIT_DELAY[ g.kind ] );
   } );
 }
 
@@ -176,8 +228,22 @@ function collides( a, b ) {
 }
 
 function update( game ) {
+  game.frame++;
+  game.modeTimer--;
+  if ( game.modeTimer <= 0 ) {
+    game.mode = game.mode === 'scatter' ? 'chase' : 'scatter';
+    game.modeTimer = game.mode === 'scatter' ? SCATTER_FRAMES : CHASE_FRAMES;
+    // Los fantasmas sueltos invierten direccion al cambiar de modo.
+    game.ghosts.forEach( ( g ) => {
+      if ( g.released ) g.dir = OPPOSITE[ g.dir ];
+    } );
+  }
+
   movePacman( game );
-  game.ghosts.forEach( ( g ) => moveGhost( game, g ) );
+  game.ghosts.forEach( ( g ) => {
+    if ( g.released ) moveGhost( game, g );
+    else if ( game.frame >= g.releaseAt ) exitPen( g );
+  } );
 
   for ( const g of game.ghosts ) {
     if ( collides( game.pacman, g ) ) {
