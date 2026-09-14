@@ -1,6 +1,6 @@
 // game.js
 // Estado y reglas. Depende de globals de maze.js: MAZE, TUNNEL_ROW,
-// PACMAN_START, GHOST_STARTS.
+// PACMAN_START, GHOST_STARTS, SCATTER_CORNERS.
 
 const DIRS = {
   left: { x: -1, y: 0 },
@@ -129,25 +129,51 @@ function decideGhost( game, g ) {
   // Sin salida (callejon): permitir el giro de 180.
   const choices = options.length ? options : [ '' + OPPOSITE[ g.dir ] ];
 
-  if ( g.kind === 'hunter' ) {
-    const px = Math.round( p.x );
-    const py = Math.round( p.y );
-    let best = choices[ 0 ];
-    let bestDist = Infinity;
-    for ( const dir of choices ) {
-      const d = DIRS[ dir ];
-      const nx = g.x + d.x;
-      const ny = g.y + d.y;
-      const dist = Math.abs( nx - px ) + Math.abs( ny - py );
-      if ( dist < bestDist ) {
-        bestDist = dist;
-        best = dir;
-      }
-    }
-    g.dir = best;
+  // Target segun modo y personalidad. Puede caer en muro o fuera del
+  // tablero: solo se usa para distancia Manhattan, no necesita ser transitable.
+  const px = Math.round( p.x );
+  const py = Math.round( p.y );
+  const pd = DIRS[ p.dir ];
+  const corner = SCATTER_CORNERS[ g.kind ];
+  let tx;
+  let ty;
+
+  if ( game.mode === 'scatter' ) {
+    tx = corner.x;
+    ty = corner.y;
+  } else if ( g.kind === 'blinky' ) {
+    tx = px;
+    ty = py;
+  } else if ( g.kind === 'pinky' ) {
+    tx = px + pd.x * 4;
+    ty = py + pd.y * 4;
+  } else if ( g.kind === 'inky' ) {
+    const b = game.ghosts.find( ( gh ) => ph.kind === 'blinky' );
+    tx = 2 * ( px + pd.x * 2 ) - Math.round( b.x );
+    ty = 2 * ( py + pd.y * 2 ) - Math.round( b.y );
   } else {
-    g.dir = choices[ Math.floor( Math.random() * choices.length ) ];
+    // clyde: persigue lejos, vuelve a su esquina cerca.
+    if ( Math.abs( g.x - px ) + Math.abs( g.y - py ) > 8 ) {
+      tx = px;
+      ty = py;
+    } else {
+      tx = corner.x;
+      ty = corner.y;
+    }
   }
+
+  // Direccion valida (sin reversa) que minimiza distancia Manhattan al target.
+  let best = choices[ 0 ];
+  let bestDist = Infinity;
+  for ( const dir of choices ) {
+    const d = DIRS[ dir ];
+    const dist = Math.abs( g.x + d.x - tx ) + Math.abs( g.y + d.y - ty );
+    if ( dist < bestDist ) {
+      bestDist = dist;
+      best = dir;
+    }
+  }
+  g.dir = best;
 }
 
 function moveGhost( game, g ) {
