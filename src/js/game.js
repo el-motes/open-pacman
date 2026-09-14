@@ -217,6 +217,9 @@ function resetPositions( game ) {
     g.x = GHOST_STARTS[ i ].x;
     g.y = GHOST_STARTS[ i ].y;
     g.dir = 'up';
+    // Re-escalonar liberaciones relativas al frame actual (tras perder vida).
+    g.released = g.kind === 'blinky';
+    g.releaseAt = game.frame + ( g.kind === 'blinky' ? 0 : EXIT_DELAY[ g.kind ] );
   } );
 }
 
