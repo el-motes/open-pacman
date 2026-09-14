@@ -185,6 +185,17 @@ function collides( a, b ) {
 }
 
 function update( game ) {
+  game.frame++;
+  game.modeTimer--;
+  if ( game.modeTimer <= 0 ) {
+    game.mode = game.mode === 'scatter' ? 'chase' : 'scatter';
+    game.modeTimer = game.mode === 'scatter' ? SCATTER_FRAMES : CHASE_FRAMES;
+    // Los fantasmas sueltos invierten direccion al cambiar de modo.
+    game.ghosts.forEach( ( g ) => {
+      if ( g.released ) g.dir = OPPOSITE[ g.dir ];
+    } );
+  }
+
   movePacman( game );
   game.ghosts.forEach( ( g ) => moveGhost( game, g ) );
 
