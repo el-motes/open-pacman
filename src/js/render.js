@@ -70,10 +70,12 @@ function drawDots( ctx, grid ) {
   ctx.fillStyle = DOT_COLOR;
   for ( let y = 0; y < grid.length; y++ ) {
     for ( let x = 0; x < grid[ 0 ].length; x++ ) {
-      if ( grid[ y ][ x ] !== 2 ) continue;
+      const v = grid[ y ][ x ];
+      if ( v !== 2 && v !== 4 ) continue;
       const { cx, cy } = cellCenter( x, y );
+      // Pellet (4): circulo ~2x el tamano del dot.
       ctx.beginPath();
-      ctx.arc( cx, cy, 2.5, 0, Math.PI * 2 );
+      ctx.arc( cx, cy, v === 4 ? 5 : 2.5, 0, Math.PI * 2 );
       ctx.fill();
     }
   }
@@ -98,9 +100,21 @@ function drawPacman( ctx, p, frame ) {
   ctx.fill();
 }
 
-function drawGhost( ctx, g, color ) {
+function drawGhost( ctx, g, color, eyesOnly ) {
   const { cx, cy } = cellCenter( g.x, g.y );
   const r = TILE / 2 - 1;
+
+  // Ojos (fantasma comido): solo dos puntos blancos, sin cuerpo.
+  if ( eyesOnly ) {
+    for ( const off of [ -3.5, 3.5 ] ) {
+      ctx.fillStyle = '#fff';
+      ctx.beginPath();
+      ctx.arc( cx + off, cy - 1, 3, 0, Math.PI * 2 );
+      ctx.fill();
+    }
+    return;
+  }
+
   const top = cy - r;
   const bottom = cy + r;
   const left = cx - r;
@@ -163,7 +177,14 @@ function draw( ctx, game, frame ) {
   drawDoor( ctx, grid );
   drawDots( ctx, grid );
   drawPacman( ctx, game.pacman, frame );
-  game.ghosts.forEach( ( g ) => drawGhost( ctx, g, GHOST_COLORS[ g.kind ] || '#ff0000' ) );
+  game.ghosts.forEach( ( g ) => {
+    let color = GHOST_COLORS[ g.kind ] || '#ff0000';
+    if ( game.frightTimer > 0 && !g.eyes ) {
+      // Asustado: azul; flash blanco alternando los ultimos 120 frames.
+      color = game.frightTimer <= 120 && Math.floor( frame / 8 ) % 2 === 0 ? '#fff' : '#2121ff';
+    }
+    drawGhost( ctx, g, color, g.eyes );
+  } );
   drawHUD( ctx, game, W );
 }
 
