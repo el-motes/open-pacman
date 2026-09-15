@@ -15,6 +15,8 @@ const GHOST_SPEED = 0.1;    // 1/10 celda/frame
 
 const SCATTER_FRAMES = 420; // 7s a 60fps
 const CHASE_FRAMES = 1200;  // 20s a 60fps
+const FRIGHT_FRAMES = 360;  // 6s a 60fps
+const FRIGHT_SPEED = 0.05; // mitad de GHOST_SPEED
 const EXIT_DELAY = { pinky: 120, inky: 360, clyde: 540 }; // ~2s/6s/9s
 
 // Crea una partida nueva. Copia MAZE (pristino) a game.grid para poder comer
@@ -25,7 +27,7 @@ function createGame() {
   grid[ PACMAN_START.y ][ PACMAN_START.x ] = 0;
 
   let dots = 0;
-  for ( const row of grid ) for ( const v of row ) if ( v === 2 ) dots++;
+  for ( const row of grid ) for ( const v of row ) if ( v === 2 || v === 4 ) dots++;
 
   return {
     state: 'start',
@@ -35,6 +37,8 @@ function createGame() {
     frame: 0,
     mode: 'scatter',
     modeTimer: SCATTER_FRAMES,
+    frightTimer: 0,  // frames restantes de modo asustado (0 = inactivo)
+    frightChain: 0,  // fantasmas comidos durante este frightened
     grid,
     pacman: {
       x: PACMAN_START.x,
@@ -51,6 +55,7 @@ function createGame() {
       kind: g.kind,
       releaseAt: g.kind === 'blinky' ? 0 : EXIT_DELAY[ g.kind ],
       released: g.kind === 'blinky',
+      eyes: false,
     } ) ),
   };
 }
@@ -109,6 +114,18 @@ function movePacman( game ) {
       game.score += 10;
       game.dotsRemaining--;
     }
+    // Comer pellet: activa modo asustado y reinicia la cadena.
+    if ( grid[ p.y ][ p.x ] === 4 ) {
+      grid[ p.y ][ p.x ] = 0;
+      game.score += 50;
+      game.dotsRemaining--;
+      game.frightTimer = FRIGHT_FRAMES;
+      game.frightChain = 0;
+      // Los fantasmas sueltos (no ojos) invierten direccion.
+      game.ghosts.forEach( ( g ) => {
+        if ( g.released && !g.eyes ) g.dir = OPPOSITE[ g.dir ];
+      } );
+    }
     // Si no puede seguir, se detiene en la celda.
     if ( !canMove( grid, p.x, p.y, p.dir, 'pacman' ) ) return;
   }
@@ -129,6 +146,12 @@ function decideGhost( game, g ) {
   // Sin salida (callejon): permitir el giro de 180.
   const choices = options.length ? options : [ '' + OPPOSITE[ g.dir ] ];
 
+  // Asustado (no ojos): direccion valida aleatoria, sin reversa.
+  if ( game.frightTimer > 0 && !g.eyes ) {
+    g.dir = choices[ Math.floor( Math.random() * choices.length ) ];
+    return;
+  }
+
   // Target segun modo y personalidad. Puede caer en muro o fuera del
   // tablero: solo se usa para distancia Manhattan, no necesita ser transitable.
   const px = Math.round( p.x );
@@ -138,7 +161,11 @@ function decideGhost( game, g ) {
   let tx;
   let ty;
 
-  if ( game.mode === 'scatter' ) {
+  if ( g.eyes ) {
+    // Ojos: volver a la pocilga (el descenso final es manual, ver update).
+    tx = 13;
+    ty = 14;
+  } else if ( game.mode === 'scatter' ) {
     tx = corner.x;
     ty = corner.y;
   } else if ( g.kind === 'blinky' ) {
@@ -179,17 +206,35 @@ function decideGhost( game, g ) {
 function moveGhost( game, g ) {
   const grid = game.grid;
   const width = grid[ 0 ].length;
+  // Asustado (no ojos) se mueve a mitad de velocidad.
+  const speed = g.eyes ? GHOST_SPEED : ( game.frightTimer > 0 ? FRIGHT_SPEED : g.speed );
+
+  // Ojos en la boca de la puerta (13,11)-(13,14): bajada manual al pen,
+  // espejo de exitPen — la puerta (3) es solida para canMove y decideGhost
+  // no interviene. Al llegar reviven y re-salen via exitPen.
+  if ( g.eyes && g.x === 13 && g.y >= 11 && g.y < 14 ) {
+    g.y = Math.min( 14, g.y + speed );
+    if ( g.y >= 14 ) {
+      g.eyes = false;
+      g.released = false;
+      g.releaseAt = game.frame;
+    }
+    return;
+  }
 
   if ( aligned( g.x ) && aligned( g.y ) ) {
     g.x = Math.round( g.x );
     g.y = Math.round( g.y );
+    // Ojos alineados exactamente sobre la puerta: quedarse, la bajada
+    // manual arranca en el proximo frame.
+    if ( g.eyes && g.x === 13 && g.y === 11 ) return;
     decideGhost( game, g );
     if ( !canMove( grid, g.x, g.y, g.dir, 'ghost' ) ) return;
   }
 
   const d = DIRS[ g.dir ];
-  g.x += d.x * g.speed;
-  g.y += d.y * g.speed;
+  g.x += d.x * speed;
+  g.y += d.y * speed;
   wrapTunnel( g, width );
 }
 
@@ -213,10 +258,14 @@ function resetPositions( game ) {
   p.y = PACMAN_START.y;
   p.dir = 'left';
   p.nextDir = null;
+  // Perder vida cancela el modo asustado y la cadena.
+  game.frightTimer = 0;
+  game.frightChain = 0;
   game.ghosts.forEach( ( g, i ) => {
     g.x = GHOST_STARTS[ i ].x;
     g.y = GHOST_STARTS[ i ].y;
     g.dir = 'up';
+    g.eyes = false;
     // Re-escalonar liberaciones relativas al frame actual (tras perder vida).
     g.released = g.kind === 'blinky';
     g.releaseAt = game.frame + ( g.kind === 'blinky' ? 0 : EXIT_DELAY[ g.kind ] );
@@ -229,14 +278,19 @@ function collides( a, b ) {
 
 function update( game ) {
   game.frame++;
-  game.modeTimer--;
-  if ( game.modeTimer <= 0 ) {
-    game.mode = game.mode === 'scatter' ? 'chase' : 'scatter';
-    game.modeTimer = game.mode === 'scatter' ? SCATTER_FRAMES : CHASE_FRAMES;
-    // Los fantasmas sueltos invierten direccion al cambiar de modo.
-    game.ghosts.forEach( ( g ) => {
-      if ( g.released ) g.dir = OPPOSITE[ g.dir ];
-    } );
+  if ( game.frightTimer > 0 ) {
+    game.frightTimer--;
+  } else {
+    // Timer scatter/chase congelado durante el modo asustado.
+    game.modeTimer--;
+    if ( game.modeTimer <= 0 ) {
+      game.mode = game.mode === 'scatter' ? 'chase' : 'scatter';
+      game.modeTimer = game.mode === 'scatter' ? SCATTER_FRAMES : CHASE_FRAMES;
+      // Los fantasmas sueltos invierten direccion al cambiar de modo.
+      game.ghosts.forEach( ( g ) => {
+        if ( g.released ) g.dir = OPPOSITE[ g.dir ];
+      } );
+    }
   }
 
   movePacman( game );
@@ -246,15 +300,23 @@ function update( game ) {
   } );
 
   for ( const g of game.ghosts ) {
-    if ( collides( game.pacman, g ) ) {
-      game.lives--;
-      if ( game.lives <= 0 ) {
-        game.state = 'lost';
-        return;
-      }
-      resetPositions( game );
-      break;
+    if ( !collides( game.pacman, g ) ) continue;
+    // Ojos cruzan a Pac-Man sin efecto (no mata, no se come).
+    if ( g.eyes ) continue;
+    if ( game.frightTimer > 0 ) {
+      // Comer fantasma asustado: cadena 200/400/800/1600.
+      game.score += 200 << game.frightChain;
+      game.frightChain++;
+      g.eyes = true;
+      continue;
     }
+    game.lives--;
+    if ( game.lives <= 0 ) {
+      game.state = 'lost';
+      return;
+    }
+    resetPositions( game );
+    break;
   }
 
   if ( game.dotsRemaining <= 0 ) game.state = 'won';
