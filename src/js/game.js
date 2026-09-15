@@ -280,15 +280,23 @@ function update( game ) {
   } );
 
   for ( const g of game.ghosts ) {
-    if ( collides( game.pacman, g ) ) {
-      game.lives--;
-      if ( game.lives <= 0 ) {
-        game.state = 'lost';
-        return;
-      }
-      resetPositions( game );
-      break;
+    if ( !collides( game.pacman, g ) ) continue;
+    // Ojos cruzan a Pac-Man sin efecto (no mata, no se come).
+    if ( g.eyes ) continue;
+    if ( game.frightTimer > 0 ) {
+      // Comer fantasma asustado: cadena 200/400/800/1600.
+      game.score += 200 << game.frightChain;
+      game.frightChain++;
+      g.eyes = true;
+      continue;
     }
+    game.lives--;
+    if ( game.lives <= 0 ) {
+      game.state = 'lost';
+      return;
+    }
+    resetPositions( game );
+    break;
   }
 
   if ( game.dotsRemaining <= 0 ) game.state = 'won';
