@@ -15,6 +15,8 @@ const GHOST_SPEED = 0.1;    // 1/10 celda/frame
 
 const SCATTER_FRAMES = 420; // 7s a 60fps
 const CHASE_FRAMES = 1200;  // 20s a 60fps
+const FRIGHT_FRAMES = 360;  // 6s a 60fps
+const FRIGHT_SPEED = 0.05; // mitad de GHOST_SPEED
 const EXIT_DELAY = { pinky: 120, inky: 360, clyde: 540 }; // ~2s/6s/9s
 
 // Crea una partida nueva. Copia MAZE (pristino) a game.grid para poder comer
@@ -111,6 +113,18 @@ function movePacman( game ) {
       grid[ p.y ][ p.x ] = 0;
       game.score += 10;
       game.dotsRemaining--;
+    }
+    // Comer pellet: activa modo asustado y reinicia la cadena.
+    if ( grid[ p.y ][ p.x ] === 4 ) {
+      grid[ p.y ][ p.x ] = 0;
+      game.score += 50;
+      game.dotsRemaining--;
+      game.frightTimer = FRIGHT_FRAMES;
+      game.frightChain = 0;
+      // Los fantasmas sueltos (no ojos) invierten direccion.
+      game.ghosts.forEach( ( g ) => {
+        if ( g.released && !g.eyes ) g.dir = OPPOSITE[ g.dir ];
+      } );
     }
     // Si no puede seguir, se detiene en la celda.
     if ( !canMove( grid, p.x, p.y, p.dir, 'pacman' ) ) return;
