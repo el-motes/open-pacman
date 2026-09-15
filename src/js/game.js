@@ -236,6 +236,20 @@ function exitPen( g ) {
   }
 }
 
+// Entrada de ojos a la pocilga: espejo de exitPen. Desde (13,11) baja por
+// la puerta (13,12) manualmente (solida para canMove) hasta (13,14); al
+// llegar revive y re-escala la salida via exitPen.
+function enterPen( g, frame ) {
+  if ( g.y < 14 ) {
+    g.y = Math.min( 14, g.y + g.speed );
+  }
+  if ( g.y >= 14 ) {
+    g.eyes = false;
+    g.released = false;
+    g.releaseAt = frame;
+  }
+}
+
 function resetPositions( game ) {
   const p = game.pacman;
   p.x = PACMAN_START.x;
@@ -275,8 +289,14 @@ function update( game ) {
 
   movePacman( game );
   game.ghosts.forEach( ( g ) => {
-    if ( g.released ) moveGhost( game, g );
-    else if ( game.frame >= g.releaseAt ) exitPen( g );
+    if ( g.eyes && g.released && g.x === 13 && g.y >= 11 ) {
+      // Ojos alineados sobre la puerta: bajada manual, decideGhost no interviene.
+      enterPen( g, game.frame );
+    } else if ( g.released ) {
+      moveGhost( game, g );
+    } else if ( game.frame >= g.releaseAt ) {
+      exitPen( g );
+    }
   } );
 
   for ( const g of game.ghosts ) {
