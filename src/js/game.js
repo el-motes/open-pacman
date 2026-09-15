@@ -256,10 +256,14 @@ function resetPositions( game ) {
   p.y = PACMAN_START.y;
   p.dir = 'left';
   p.nextDir = null;
+  // Perder vida cancela el modo asustado y la cadena.
+  game.frightTimer = 0;
+  game.frightChain = 0;
   game.ghosts.forEach( ( g, i ) => {
     g.x = GHOST_STARTS[ i ].x;
     g.y = GHOST_STARTS[ i ].y;
     g.dir = 'up';
+    g.eyes = false;
     // Re-escalonar liberaciones relativas al frame actual (tras perder vida).
     g.released = g.kind === 'blinky';
     g.releaseAt = game.frame + ( g.kind === 'blinky' ? 0 : EXIT_DELAY[ g.kind ] );
