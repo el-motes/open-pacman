@@ -146,6 +146,12 @@ function decideGhost( game, g ) {
   // Sin salida (callejon): permitir el giro de 180.
   const choices = options.length ? options : [ '' + OPPOSITE[ g.dir ] ];
 
+  // Asustado (no ojos): direccion valida aleatoria, sin reversa.
+  if ( game.frightTimer > 0 && !g.eyes ) {
+    g.dir = choices[ Math.floor( Math.random() * choices.length ) ];
+    return;
+  }
+
   // Target segun modo y personalidad. Puede caer en muro o fuera del
   // tablero: solo se usa para distancia Manhattan, no necesita ser transitable.
   const px = Math.round( p.x );
@@ -155,7 +161,11 @@ function decideGhost( game, g ) {
   let tx;
   let ty;
 
-  if ( game.mode === 'scatter' ) {
+  if ( g.eyes ) {
+    // Ojos: volver a la pocilga (el descenso final es manual, ver update).
+    tx = 13;
+    ty = 14;
+  } else if ( game.mode === 'scatter' ) {
     tx = corner.x;
     ty = corner.y;
   } else if ( g.kind === 'blinky' ) {
@@ -196,6 +206,8 @@ function decideGhost( game, g ) {
 function moveGhost( game, g ) {
   const grid = game.grid;
   const width = grid[ 0 ].length;
+  // Asustado (no ojos) se mueve a mitad de velocidad.
+  const speed = g.eyes ? GHOST_SPEED : ( game.frightTimer > 0 ? FRIGHT_SPEED : g.speed );
 
   if ( aligned( g.x ) && aligned( g.y ) ) {
     g.x = Math.round( g.x );
@@ -205,8 +217,8 @@ function moveGhost( game, g ) {
   }
 
   const d = DIRS[ g.dir ];
-  g.x += d.x * g.speed;
-  g.y += d.y * g.speed;
+  g.x += d.x * speed;
+  g.y += d.y * speed;
   wrapTunnel( g, width );
 }
 
