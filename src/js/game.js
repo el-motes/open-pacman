@@ -209,9 +209,25 @@ function moveGhost( game, g ) {
   // Asustado (no ojos) se mueve a mitad de velocidad.
   const speed = g.eyes ? GHOST_SPEED : ( game.frightTimer > 0 ? FRIGHT_SPEED : g.speed );
 
+  // Ojos en la boca de la puerta (13,11)-(13,14): bajada manual al pen,
+  // espejo de exitPen — la puerta (3) es solida para canMove y decideGhost
+  // no interviene. Al llegar reviven y re-salen via exitPen.
+  if ( g.eyes && g.x === 13 && g.y >= 11 && g.y < 14 ) {
+    g.y = Math.min( 14, g.y + speed );
+    if ( g.y >= 14 ) {
+      g.eyes = false;
+      g.released = false;
+      g.releaseAt = game.frame;
+    }
+    return;
+  }
+
   if ( aligned( g.x ) && aligned( g.y ) ) {
     g.x = Math.round( g.x );
     g.y = Math.round( g.y );
+    // Ojos alineados exactamente sobre la puerta: quedarse, la bajada
+    // manual arranca en el proximo frame.
+    if ( g.eyes && g.x === 13 && g.y === 11 ) return;
     decideGhost( game, g );
     if ( !canMove( grid, g.x, g.y, g.dir, 'ghost' ) ) return;
   }
@@ -233,20 +249,6 @@ function exitPen( g ) {
   } else {
     g.released = true;
     g.dir = 'left';
-  }
-}
-
-// Entrada de ojos a la pocilga: espejo de exitPen. Desde (13,11) baja por
-// la puerta (13,12) manualmente (solida para canMove) hasta (13,14); al
-// llegar revive y re-escala la salida via exitPen.
-function enterPen( g, frame ) {
-  if ( g.y < 14 ) {
-    g.y = Math.min( 14, g.y + g.speed );
-  }
-  if ( g.y >= 14 ) {
-    g.eyes = false;
-    g.released = false;
-    g.releaseAt = frame;
   }
 }
 
@@ -293,14 +295,8 @@ function update( game ) {
 
   movePacman( game );
   game.ghosts.forEach( ( g ) => {
-    if ( g.eyes && g.released && g.x === 13 && g.y >= 11 ) {
-      // Ojos alineados sobre la puerta: bajada manual, decideGhost no interviene.
-      enterPen( g, game.frame );
-    } else if ( g.released ) {
-      moveGhost( game, g );
-    } else if ( game.frame >= g.releaseAt ) {
-      exitPen( g );
-    }
+    if ( g.released ) moveGhost( game, g );
+    else if ( game.frame >= g.releaseAt ) exitPen( g );
   } );
 
   for ( const g of game.ghosts ) {
